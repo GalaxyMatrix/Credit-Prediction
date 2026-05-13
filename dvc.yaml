@@ -1,7 +1,36 @@
 stages:
   preprocess:
-    cmd: python src/preprocessing.py
+    cmd: python -m src.preprocessing
+    deps:
+      - southAfrican_credit_data.csv
+      - src/preprocessing.py
+    outs:
+      - artifacts/preprocessed_placeholder.txt
+
   train:
     cmd: python train.py
+    deps:
+      - train.py
+      - src/data_loader.py
+      - src/preprocessing.py
+      - src/model.py
+      - src/metrics.py
+      - southAfrican_credit_data.csv
+    outs:
+      - artifacts/best_extra_trees_model.pkl
+      - artifacts/Sex_label_encoder.pkl
+      - artifacts/Housing_label_encoder.pkl
+      - artifacts/Saving accounts_label_encoder.pkl
+      - artifacts/Checking account_label_encoder.pkl
+    metrics:
+      - artifacts/train_metrics.json
+
   evaluate:
     cmd: python evaluate.py
+    deps:
+      - evaluate.py
+      - artifacts/best_extra_trees_model.pkl
+      - src/metrics.py
+      - southAfrican_credit_data.csv
+    metrics:
+      - artifacts/eval_metrics.json
