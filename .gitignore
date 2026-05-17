@@ -31,8 +31,7 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# ML Models - exclude all .pkl files
-*.pkl
+
 *.joblib
 *.h5
 *.pb

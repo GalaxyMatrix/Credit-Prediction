@@ -1,1 +1,46 @@
-# Docker Compose configuration
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: credit-risk-api
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: credit-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: Streamlit UI (uncomment if you want it)
+  # streamlit:
+  #   build:
+  #     context: ..
+  #     dockerfile: docker/Dockerfile.streamlit
+  #   ports:
+  #     - "8501:8501"
+  #   depends_on:
+  #     - api
+
+  # Optional: MLflow UI (local tracking store)
+  # mlflow:
+  #   image: ghcr.io/mlflow/mlflow:v2.16.2
+  #   ports:
+  #     - "5000:5000"
+  #   volumes:
+  #     - ../mlruns:/mlflow/mlruns
+  #   command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlflow/mlruns

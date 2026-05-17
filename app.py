@@ -1,6 +1,11 @@
-import streamlit as st 
-import pandas as pd
+from pathlib import Path
+
 import joblib
+import pandas as pd
+import streamlit as st
+
+ARTIFACT_DIR = Path("artifacts")
+ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
 
 # Page config
 st.set_page_config(page_title="Credit Risk Predictor", page_icon="💳", layout="centered")
@@ -51,9 +56,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load model and encoders
-model = joblib.load("best_extra_trees_model.pkl")
-encoders = {col: joblib.load(f"{col}_label_encoder.pkl") for col in ["Sex", "Housing", "Saving accounts", "Checking account"]}
+@st.cache_resource
+def load_artifacts():
+    model = joblib.load(ARTIFACT_DIR / "best_extra_trees_model.pkl")
+    encoders = {
+        col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl")
+        for col in ENCODER_COLS
+    }
+    return model, encoders
+
+
+model, encoders = load_artifacts()
 
 # Header
 st.title("💳 Credit Risk Predictor")

@@ -1,6 +1,7 @@
 import pandas as pd 
 
 
+from src.data_loader import encode_target
 from src.preprocessing import preprocess_train, preprocess_inference
 from src.model import build_model, train_model
 
@@ -17,7 +18,7 @@ def _sample_df():
             "Checking account": ["little", "moderate", "little", "moderate"],
             "Credit amount": [1000, 3000, 1500, 5000],
             "Duration": [12, 24, 18, 36],
-            "Risk": [1, 0, 1, 0],
+            "Risk": ["good", "bad", "good", "bad"],
         }
     )
 
@@ -35,7 +36,7 @@ def test_preprocess_roundtrip():
 def test_model_trains_and_predicts():
     df = _sample_df()
     X = df.drop(columns=["Risk"])
-    y = df["Risk"]
+    y = encode_target(df["Risk"])
     X_proc, _ = preprocess_train(X)
     model = build_model(random_state=42, n_estimators=20)
     model = train_model(model, X_proc, y)

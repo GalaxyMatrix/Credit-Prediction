@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Literal
 
 import joblib
@@ -38,11 +39,14 @@ PREDICTION_ERRORS = Counter(
 # -----------------------------
 # Model + encoders
 # -----------------------------
-MODEL_PATH = "best_extra_trees_model.pkl"
+ARTIFACT_DIR = Path("artifacts")
+MODEL_PATH = ARTIFACT_DIR / "best_extra_trees_model.pkl"
 ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
 
 model = joblib.load(MODEL_PATH)
-encoders = {col: joblib.load(f"{col}_label_encoder.pkl") for col in ENCODER_COLS}
+encoders = {
+    col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl") for col in ENCODER_COLS
+}
 
 app = FastAPI(title="Credit Risk API", version="1.0.0")
 

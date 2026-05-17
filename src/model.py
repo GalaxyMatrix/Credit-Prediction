@@ -25,11 +25,11 @@ def train_model(model: Any, X_train: pd.DataFrame, y_train: pd.Series) -> Any:
     model.fit(X_train, y_train)
     return model 
 
-def save_model(model: Any, path: Path) -> None:
-    model_path = Path(model_path)
+def save_model(model: Any, path: str | Path) -> None:
+    model_path = Path(path)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, model_path)
 
 
-def load_model(path: Path) -> Any:
+def load_model(path: str | Path) -> Any:
     return joblib.load(path)

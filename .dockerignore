@@ -1,0 +1,38 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Git
+.git/
+.gitignore
+
+# Secrets and config
+*.env
+.env.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Notebooks and docs
+*.ipynb
+*.md
+
+# Tests
+tests/
+
+# Local IDE/editor config
+.vscode/
+.idea/
+.streamlit/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Data files (not needed in API image)
+*.csv

@@ -1,121 +1,63 @@
 from __future__ import annotations
 
-import time
-from typing import Literal
+import json
+from pathlib import Path
 
 import joblib
-import pandas as pd
-from fastapi import FastAPI, HTTPException, Response
-from pydantic import BaseModel, Field
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import mlflow
 
-# -----------------------------
-# Prometheus metrics
-# -----------------------------
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total HTTP requests",
-    ["method", "endpoint", "status"],
-)
+from src.data_loader import encode_target, load_raw_data, split_train_test
+from src.metrics import assert_metric_thresholds, compute_metrics
+from src.model import load_model
+from src.preprocessing import preprocess_inference
 
-REQUEST_LATENCY = Histogram(
-    "http_request_latency_seconds",
-    "HTTP request latency in seconds",
-    ["endpoint"],
-)
+DATA_PATH = Path("southAfrican_credit_data.csv")
+ARTIFACT_DIR = Path("artifacts")
+MODEL_PATH = ARTIFACT_DIR / "best_extra_trees_model.pkl"
+EVAL_METRICS_PATH = ARTIFACT_DIR / "eval_metrics.json"
 
-PREDICTION_COUNT = Counter(
-    "prediction_requests_total",
-    "Total predictions by outcome",
-    ["outcome"],
-)
-
-PREDICTION_ERRORS = Counter(
-    "prediction_errors_total",
-    "Total prediction errors",
-)
-
-# -----------------------------
-# Model + encoders
-# -----------------------------
-MODEL_PATH = "best_extra_trees_model.pkl"
 ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
 
-model = joblib.load(MODEL_PATH)
-encoders = {col: joblib.load(f"{col}_label_encoder.pkl") for col in ENCODER_COLS}
 
-app = FastAPI(title="Credit Risk API", version="1.0.0")
+def _load_encoders():
+    return {
+        col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl")
+        for col in ENCODER_COLS
+    }
 
 
-class CreditRequest(BaseModel):
-    Age: int = Field(ge=18, le=100)
-    Sex: Literal["male", "female"]
-    Job: int = Field(ge=0, le=3)
-    Housing: Literal["own", "rent", "free"]
-    Saving_accounts: Literal["little", "moderate", "rich", "quite rich"] = Field(
-        alias="Saving accounts"
+def main() -> None:
+    df = load_raw_data(DATA_PATH)
+    _, X_test, _, y_test = split_train_test(df, target_col="Risk")
+    y_test = encode_target(y_test)
+
+    model = load_model(MODEL_PATH)
+    encoders = _load_encoders()
+    X_test_proc = preprocess_inference(X_test, encoders)
+
+    y_pred = model.predict(X_test_proc)
+    y_proba = (
+        model.predict_proba(X_test_proc)[:, 1]
+        if hasattr(model, "predict_proba")
+        else None
     )
-    Checking_account: Literal["little", "moderate"] = Field(alias="Checking account")
-    Credit_amount: int = Field(ge=0, alias="Credit amount")
-    Duration: int = Field(ge=1, le=120)
 
-    model_config = {"populate_by_name": True}
+    metrics = compute_metrics(y_test, y_pred, y_proba)
+    assert_metric_thresholds(metrics, min_f1=0.50, min_auc=0.60)
 
+    EVAL_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with EVAL_METRICS_PATH.open("w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
 
-@app.middleware("http")
-async def prometheus_middleware(request, call_next):
-    start = time.perf_counter()
-    status_code = 500
-    endpoint = request.url.path
+    mlflow.set_tracking_uri("file:./mlruns")
+    mlflow.set_experiment("credit-risk")
+    with mlflow.start_run(run_name="extra_trees_eval"):
+        mlflow.log_metrics(metrics)
+        mlflow.set_tag("quality_gate", "passed")
+        mlflow.log_artifact(str(EVAL_METRICS_PATH))
 
-    try:
-        response = await call_next(request)
-        status_code = response.status_code
-        return response
-    finally:
-        elapsed = time.perf_counter() - start
-        REQUEST_LATENCY.labels(endpoint=endpoint).observe(elapsed)
-        REQUEST_COUNT.labels(
-            method=request.method, endpoint=endpoint, status=str(status_code)
-        ).inc()
+    print(json.dumps(metrics, indent=2))
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-
-@app.post("/predict")
-def predict(req: CreditRequest):
-    try:
-        payload = req.model_dump(by_alias=True)
-        X = pd.DataFrame([payload])
-
-        # encode categorical fields using training encoders
-        for col in ENCODER_COLS:
-            X[col] = encoders[col].transform(X[col].astype(str))
-
-        pred = int(model.predict(X)[0])
-        proba = (
-            float(model.predict_proba(X)[0][1])
-            if hasattr(model, "predict_proba")
-            else None
-        )
-
-        outcome = "bad_risk" if pred == 0 else "good_risk"
-        PREDICTION_COUNT.labels(outcome=outcome).inc()
-
-        return {
-            "prediction": pred,
-            "prediction_label": "bad_risk" if pred == 0 else "good_risk",
-            "probability_bad_risk": proba,
-        }
-
-    except Exception as exc:
-        PREDICTION_ERRORS.inc()
-        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}")
+if __name__ == "__main__":
+    main()
