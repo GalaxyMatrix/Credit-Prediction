@@ -1,16 +1,30 @@
-from fastapi.testclient import TestClient 
-from api import app 
+from pathlib import Path
+
+import pytest
+
+ARTIFACT_MODEL = Path("artifacts/best_extra_trees_model.pkl")
+
+pytestmark = pytest.mark.skipif(
+    not ARTIFACT_MODEL.exists(),
+    reason="Model artifacts missing; run: python train.py",
+)
 
 
-client = TestClient(app)
+@pytest.fixture(scope="module")
+def client():
+    from fastapi.testclient import TestClient
+    from api import app
 
-def test_health():
+    return TestClient(app)
+
+
+def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_predict_contract():
+def test_predict_contract(client):
     payload = {
         "Age": 30,
         "Sex": "male",
@@ -23,6 +37,6 @@ def test_predict_contract():
     }
     r = client.post("/predict", json=payload)
     assert r.status_code == 200
-    body = r.json() 
+    body = r.json()
     assert "prediction" in body
     assert body["prediction"] in [0, 1]
