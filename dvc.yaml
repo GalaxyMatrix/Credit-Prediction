@@ -1,21 +1,21 @@
 stages:
-  preprocess:
-    cmd: python -m src.preprocessing
-    deps:
-      - southAfrican_credit_data.csv
-      - src/preprocessing.py
-    outs:
-      - artifacts/preprocessed_placeholder.txt
-
   train:
     cmd: python train.py
     deps:
       - train.py
+      - params.yaml
       - src/data_loader.py
       - src/preprocessing.py
       - src/model.py
       - src/metrics.py
       - southAfrican_credit_data.csv
+    params:
+      - train.random_state
+      - train.test_size
+      - train.n_estimators
+      - train.model_type
+      - mlflow.tracking_uri
+      - mlflow.experiment_name
     outs:
       - artifacts/best_extra_trees_model.pkl
       - artifacts/Sex_label_encoder.pkl
@@ -29,8 +29,21 @@ stages:
     cmd: python evaluate.py
     deps:
       - evaluate.py
-      - artifacts/best_extra_trees_model.pkl
+      - params.yaml
+      - src/data_loader.py
+      - src/preprocessing.py
+      - src/model.py
       - src/metrics.py
+      - artifacts/best_extra_trees_model.pkl
+      - artifacts/Sex_label_encoder.pkl
+      - artifacts/Housing_label_encoder.pkl
+      - artifacts/Saving accounts_label_encoder.pkl
+      - artifacts/Checking account_label_encoder.pkl
       - southAfrican_credit_data.csv
+    params:
+      - evaluate.min_f1
+      - evaluate.min_auc
+      - mlflow.tracking_uri
+      - mlflow.experiment_name
     metrics:
       - artifacts/eval_metrics.json
