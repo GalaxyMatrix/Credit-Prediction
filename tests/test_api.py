@@ -34,6 +34,7 @@ def test_predict_contract(client):
         "Checking account": "moderate",
         "Credit amount": 2000,
         "Duration": 12,
+        "Purpose": "car",
     }
     r = client.post("/predict", json=payload)
     assert r.status_code == 200

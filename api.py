@@ -10,6 +10,8 @@ from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
+from src.preprocessing import load_preprocessor, preprocess_inference
+
 # -----------------------------
 # Prometheus metrics
 # -----------------------------
@@ -41,12 +43,9 @@ PREDICTION_ERRORS = Counter(
 # -----------------------------
 ARTIFACT_DIR = Path("artifacts")
 MODEL_PATH = ARTIFACT_DIR / "best_extra_trees_model.pkl"
-ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
 
 model = joblib.load(MODEL_PATH)
-encoders = {
-    col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl") for col in ENCODER_COLS
-}
+preprocessor = load_preprocessor(ARTIFACT_DIR)
 
 app = FastAPI(title="Credit Risk API", version="1.0.0")
 
@@ -59,9 +58,21 @@ class CreditRequest(BaseModel):
     Saving_accounts: Literal["little", "moderate", "rich", "quite rich"] = Field(
         alias="Saving accounts"
     )
-    Checking_account: Literal["little", "moderate"] = Field(alias="Checking account")
+    Checking_account: Literal["little", "moderate", "rich"] = Field(
+        alias="Checking account"
+    )
     Credit_amount: int = Field(ge=0, alias="Credit amount")
     Duration: int = Field(ge=1, le=120)
+    Purpose: Literal[
+        "business",
+        "car",
+        "domestic appliances",
+        "education",
+        "furniture/equipment",
+        "radio/TV",
+        "repairs",
+        "vacation/others",
+    ]
 
     model_config = {"populate_by_name": True}
 
@@ -100,13 +111,11 @@ def predict(req: CreditRequest):
         payload = req.model_dump(by_alias=True)
         X = pd.DataFrame([payload])
 
-        # encode categorical fields using training encoders
-        for col in ENCODER_COLS:
-            X[col] = encoders[col].transform(X[col].astype(str))
+        X_proc = preprocess_inference(X, preprocessor)
 
-        pred = int(model.predict(X)[0])
+        pred = int(model.predict(X_proc)[0])
         proba = (
-            float(model.predict_proba(X)[0][1])
+            float(model.predict_proba(X_proc)[0][1])
             if hasattr(model, "predict_proba")
             else None
         )

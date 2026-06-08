@@ -3,34 +3,24 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import joblib
 import mlflow
 import yaml
 
 from src.data_loader import encode_target, load_raw_data, split_train_test
 from src.metrics import assert_metric_thresholds, compute_metrics
 from src.model import load_model
-from src.preprocessing import preprocess_inference
+from src.preprocessing import load_preprocessor, preprocess_inference
 
 DATA_PATH = Path("southAfrican_credit_data.csv")
 ARTIFACT_DIR = Path("artifacts")
 MODEL_PATH = ARTIFACT_DIR / "best_extra_trees_model.pkl"
 EVAL_METRICS_PATH = ARTIFACT_DIR / "eval_metrics.json"
 PARAMS_PATH = Path("params.yaml")
-ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
 
 
 def load_params() -> dict:
     with PARAMS_PATH.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
-
-
-
-def _load_encoders():
-    return {
-        col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl")
-        for col in ENCODER_COLS
-    }
 
 
 def main() -> None: 
@@ -52,8 +42,8 @@ def main() -> None:
     y_test = encode_target(y_test)
 
     model = load_model(MODEL_PATH)
-    encoders = _load_encoders() 
-    X_test_proc = preprocess_inference(X_test, encoders)
+    preprocessor = load_preprocessor(ARTIFACT_DIR)
+    X_test_proc = preprocess_inference(X_test, preprocessor)
 
     y_pred = model.predict(X_test_proc)
     y_prob = (

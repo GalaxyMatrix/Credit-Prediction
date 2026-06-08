@@ -26,6 +26,7 @@ def test_load_raw_data_ok(tmp_path: Path):
       "Checking account": ["moderate"],
       "Credit amount": [1000],
       "Duration": [12],
+      "Purpose": ["car"],
       "Risk": ["good"],
     }
   )

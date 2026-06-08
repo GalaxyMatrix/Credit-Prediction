@@ -7,7 +7,7 @@ import yaml
 from src.data_loader import encode_target, load_raw_data, split_train_test 
 from src.metrics import compute_metrics
 from src.model import build_model, save_model, train_model
-from src.preprocessing import preprocess_train, preprocess_inference, save_encoders 
+from src.preprocessing import preprocess_train, preprocess_inference, save_preprocessor
 
 
 
@@ -15,6 +15,7 @@ DATA_PATH = Path("southAfrican_credit_data.csv")
 ARTIFACT_DIR = Path("artifacts")
 MODEL_PATH = ARTIFACT_DIR / "best_extra_trees_model.pkl"
 METRICS_PATH = ARTIFACT_DIR / "train_metrics.json"
+PREPROCESSOR_PATH = ARTIFACT_DIR / "preprocessor.pkl"
 PARAMS_PATH = Path("params.yaml")
 
 
@@ -41,8 +42,8 @@ def main() -> None:
     y_train = encode_target(y_train)
     y_test = encode_target(y_test) 
 
-    X_train_proc, encoders = preprocess_train(X_train)
-    X_test_proc = preprocess_inference(X_test, encoders)
+    X_train_proc, preprocessor = preprocess_train(X_train)
+    X_test_proc = preprocess_inference(X_test, preprocessor)
 
 
     model = build_model(
@@ -59,7 +60,7 @@ def main() -> None:
     metrics = compute_metrics(y_test, y_pred, y_proba)
 
     save_model(model, MODEL_PATH)
-    save_encoders(encoders, ARTIFACT_DIR) 
+    save_preprocessor(preprocessor, ARTIFACT_DIR)
 
     with METRICS_PATH.open("w") as f:
         json.dump(metrics, f, indent=2)
@@ -85,9 +86,8 @@ def main() -> None:
         mlflow.log_metrics(metrics)
         mlflow.log_artifact(str(MODEL_PATH))
         mlflow.log_artifact(str(METRICS_PATH))
-        for encoder_path in ARTIFACT_DIR.glob("*_label_encoder.pkl"):
-            mlflow.log_artifact(str(encoder_path))
-        
+        mlflow.log_artifact(str(PREPROCESSOR_PATH))
+
         print(json.dumps(metrics, indent=2))
 
 

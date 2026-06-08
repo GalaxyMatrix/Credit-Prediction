@@ -14,6 +14,7 @@ FEATURE_COLUMNS = [
     "Age",
     "Sex",
     "Job",
+    "Purpose",
     "Housing",
     "Saving accounts",
     "Checking account",

@@ -1,11 +1,10 @@
-from pathlib import Path
+import os
 
-import joblib
-import pandas as pd
+import requests
 import streamlit as st
 
-ARTIFACT_DIR = Path("artifacts")
-ENCODER_COLS = ["Sex", "Housing", "Saving accounts", "Checking account"]
+# Point this at the deployed API. Override via Streamlit secrets or env var.
+API_URL = st.secrets.get("API_URL", os.getenv("API_URL", "http://localhost:8000"))
 
 # Page config
 st.set_page_config(page_title="Credit Risk Predictor", page_icon="💳", layout="centered")
@@ -56,17 +55,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_resource
-def load_artifacts():
-    model = joblib.load(ARTIFACT_DIR / "best_extra_trees_model.pkl")
-    encoders = {
-        col: joblib.load(ARTIFACT_DIR / f"{col}_label_encoder.pkl")
-        for col in ENCODER_COLS
-    }
-    return model, encoders
+@st.cache_data(ttl=30)
+def api_healthy() -> bool:
+    try:
+        r = requests.get(f"{API_URL}/health", timeout=5)
+        return r.status_code == 200
+    except requests.RequestException:
+        return False
 
-
-model, encoders = load_artifacts()
 
 # Header
 st.title("💳 Credit Risk Predictor")
@@ -79,54 +75,103 @@ with st.container():
     
     with col1:
         st.markdown("**👤 Personal Information**")
-        age = st.number_input("Age", min_value=18, max_value=100, value=30)
-        sex = st.selectbox("Sex", ["male", "female"])
-        job = st.number_input("Job (0-3)", min_value=0, max_value=3, value=1)
-        housing = st.selectbox("Housing", ["own", "rent", "free"])
-    
+
+        st.markdown("**Age**")
+        age = st.number_input("Age", min_value=18, max_value=100, value=30, label_visibility="collapsed")
+
+        st.markdown("**Sex**")
+        sex = st.selectbox("Sex", ["male", "female"], label_visibility="collapsed")
+
+        st.markdown("**Job (0-3)**")
+        job = st.number_input("Job (0-3)", min_value=0, max_value=3, value=1, label_visibility="collapsed")
+
+        st.markdown("**Housing**")
+        housing = st.selectbox("Housing", ["own", "rent", "free"], label_visibility="collapsed")
+
     with col2:
         st.markdown("**💰 Financial Information**")
-        credit_amount = st.number_input("Credit Amount (DM)", min_value=0, value=1000, step=100)
-        duration = st.number_input("Duration (months)", min_value=1, value=12)
-        saving_accounts = st.selectbox("Saving Accounts", ["little", "moderate", "rich", "quite rich"])
-        checking_account = st.selectbox("Checking Account", ["little", "moderate"])
+
+        st.markdown("**Credit Amount (DM)**")
+        credit_amount = st.number_input("Credit Amount (DM)", min_value=0, value=1000, step=100, label_visibility="collapsed")
+
+        st.markdown("**Duration (months)**")
+        duration = st.number_input("Duration (months)", min_value=1, value=12, label_visibility="collapsed")
+
+        st.markdown("**Saving Accounts**")
+        saving_accounts = st.selectbox("Saving Accounts", ["little", "moderate", "rich", "quite rich"], label_visibility="collapsed")
+
+        st.markdown("**Checking Account**")
+        checking_account = st.selectbox("Checking Account", ["little", "moderate", "rich"], label_visibility="collapsed")
+
+        st.markdown("**Purpose**")
+        purpose = st.selectbox(
+            "Purpose",
+            [
+                "car",
+                "radio/TV",
+                "furniture/equipment",
+                "business",
+                "education",
+                "repairs",
+                "domestic appliances",
+                "vacation/others",
+            ],
+            label_visibility="collapsed",
+        )
 
 st.markdown("---")
 
-# Prepare input data
-input_data = pd.DataFrame({
-    "Age": [age],
-    "Sex": [encoders["Sex"].transform([sex])[0]],
-    "Job": [job],       
-    "Housing": [encoders["Housing"].transform([housing])[0]],
-    "Saving accounts": [encoders["Saving accounts"].transform([saving_accounts])[0]],
-    "Checking account": [encoders["Checking account"].transform([checking_account])[0]],
-    "Credit amount": [credit_amount],
-    "Duration": [duration]
-})
+# Build payload using the exact field names the API expects (Pydantic aliases)
+payload = {
+    "Age": age,
+    "Sex": sex,
+    "Job": job,
+    "Purpose": purpose,
+    "Housing": housing,
+    "Saving accounts": saving_accounts,
+    "Checking account": checking_account,
+    "Credit amount": credit_amount,
+    "Duration": duration,
+}
 
 # Predict button
 if st.button("🔮 Predict Credit Risk"):
-    pred = model.predict(input_data)[0]
-    
-    st.markdown("---")
-    
-    # Results with icons
-    if pred == 1:
-        st.markdown("""
-        <div style='text-align: center; padding: 20px; background-color: #d4edda; border-radius: 10px; border: 2px solid #28a745;'>
-            <h2 style='color: #28a745; margin: 0;'>✅ Good Credit Risk</h2>
-            <p style='font-size: 18px; color: #28a745;'>The applicant is likely to repay the credit.</p>
-        </div>
-        """, unsafe_allow_html=True)
+    if not api_healthy():
+        st.error(f"API not reachable at {API_URL}. Check that the service is running.")
     else:
-        st.markdown("""
-        <div style='text-align: center; padding: 20px; background-color: #f8d7da; border-radius: 10px; border: 2px solid #dc3545;'>
-            <h2 style='color: #dc3545; margin: 0;'>❌ Bad Credit Risk</h2>
-            <p style='font-size: 18px; color: #dc3545;'>The applicant may default on the credit.</p>
-        </div>
-        """, unsafe_allow_html=True)
+        try:
+            with st.spinner("Scoring..."):
+                resp = requests.post(f"{API_URL}/predict", json=payload, timeout=15)
+            resp.raise_for_status()
+            body = resp.json()
+            pred = body["prediction"]
+            proba_bad = body.get("probability_bad_risk")
+
+            st.markdown("---")
+
+            if pred == 1:
+                st.markdown("""
+                <div style='text-align: center; padding: 20px; background-color: #d4edda; border-radius: 10px; border: 2px solid #28a745;'>
+                    <h2 style='color: #28a745; margin: 0;'>✅ Good Credit Risk</h2>
+                    <p style='font-size: 18px; color: #28a745;'>The applicant is likely to repay the credit.</p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style='text-align: center; padding: 20px; background-color: #f8d7da; border-radius: 10px; border: 2px solid #dc3545;'>
+                    <h2 style='color: #dc3545; margin: 0;'>❌ Bad Credit Risk</h2>
+                    <p style='font-size: 18px; color: #dc3545;'>The applicant may default on the credit.</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if proba_bad is not None:
+                st.caption(f"Probability of bad risk: {proba_bad:.1%}")
+
+        except requests.HTTPError:
+            st.error(f"Prediction failed ({resp.status_code}): {resp.text}")
+        except requests.RequestException as exc:
+            st.error(f"Request error: {exc}")
 
 # Footer
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #6c757d;'>Model: Extra Trees Classifier | Accuracy: 64.76%</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6c757d;'>Model: Extra Trees Classifier </p>", unsafe_allow_html=True)

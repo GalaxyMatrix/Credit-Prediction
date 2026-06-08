@@ -1,67 +1,83 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Tuple
 
+import joblib
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
 
-import joblib 
-import pandas as pd 
+# Ordinal features: order matters (low -> high). "unknown" is the lowest bucket.
+ORDINAL_COLUMNS = {
+    "Saving accounts": ["unknown", "little", "moderate", "rich", "quite rich"],
+    "Checking account": ["unknown", "little", "moderate", "rich"],
+}
 
-from sklearn.preprocessing import LabelEncoder
+# Nominal features: no inherent order -> one-hot
+NOMINAL_COLUMNS = ["Sex", "Housing", "Purpose"]
 
+# Numeric features: passthrough
+NUMERIC_COLUMNS = ["Age", "Job", "Credit amount", "Duration"]
 
-CATEGORICAL_COLUMNS = ["Sex", "Housing", "Saving accounts", "Checking account"]
+CATEGORICAL_COLUMNS = list(ORDINAL_COLUMNS.keys()) + NOMINAL_COLUMNS
+
+PREPROCESSOR_FILENAME = "preprocessor.pkl"
+
 
 def fill_missing_categories(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy() 
-    for col in  CATEGORICAL_COLUMNS:
-        out[col] = out[col].fillna("unknown")
-    return out 
-
-
-
-def fit_label_encoders(df: pd.DataFrame) -> Dict[str, LabelEncoder]:
-    encoders : Dict[str, LabelEncoder] = {}
-    for col in CATEGORICAL_COLUMNS:
-        le = LabelEncoder()
-        le.fit(df[col].astype(str))
-        encoders[col] = le
-    return encoders
-
-
-def transform_with_encoders(df: pd.DataFrame, encoders: Dict[str, LabelEncoder]) -> pd.DataFrame:
     out = df.copy()
-    for col, le in encoders.items():
-        values = out[col].astype(str)
-        unknown = sorted(set(values.unique()) - set(le.classes_))
-        if unknown:
-            raise ValueError(f"Unknown values in {col}: {unknown}")
-        out[col] = le.transform(values)
-    return out 
+    for col in CATEGORICAL_COLUMNS:
+        out[col] = out[col].astype(str).replace({"nan": "unknown", "NA": "unknown"})
+        out[col] = out[col].where(out[col] != "", "unknown")
+    return out
 
+
+def build_preprocessor() -> ColumnTransformer:
+    ordinal = OrdinalEncoder(
+        categories=[
+            ORDINAL_COLUMNS["Saving accounts"],
+            ORDINAL_COLUMNS["Checking account"],
+        ],
+        handle_unknown="use_encoded_value",
+        unknown_value=-1,
+    )
+    nominal = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    return ColumnTransformer(
+        transformers=[
+            ("ord", ordinal, list(ORDINAL_COLUMNS.keys())),
+            ("nom", nominal, NOMINAL_COLUMNS),
+            ("num", "passthrough", NUMERIC_COLUMNS),
+        ]
+    )
+
+
+def _to_frame(arr, preprocessor: ColumnTransformer) -> pd.DataFrame:
+    return pd.DataFrame(arr, columns=preprocessor.get_feature_names_out())
 
 
 def preprocess_train(
     X_train: pd.DataFrame,
-) -> Tuple[pd.DataFrame, Dict[str, LabelEncoder]]:
+) -> Tuple[pd.DataFrame, ColumnTransformer]:
     X_train = fill_missing_categories(X_train)
-    encoders = fit_label_encoders(X_train)
-    X_train = transform_with_encoders(X_train, encoders)
-    return X_train, encoders
-
+    preprocessor = build_preprocessor()
+    arr = preprocessor.fit_transform(X_train)
+    return _to_frame(arr, preprocessor), preprocessor
 
 
 def preprocess_inference(
-    X: pd.DataFrame, encoders: Dict[str, LabelEncoder]
+    X: pd.DataFrame, preprocessor: ColumnTransformer
 ) -> pd.DataFrame:
     X = fill_missing_categories(X)
-    return transform_with_encoders(X, encoders)
+    arr = preprocessor.transform(X)
+    return _to_frame(arr, preprocessor)
 
 
-def save_encoders(encoders: Dict[str, LabelEncoder], out_dir: str | Path) -> None:
+def save_preprocessor(preprocessor: ColumnTransformer, out_dir: str | Path) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    for col, enc in encoders.items():
-        joblib.dump(enc, out_dir / f"{col}_label_encoder.pkl")
+    joblib.dump(preprocessor, out_dir / PREPROCESSOR_FILENAME)
 
-        
+
+def load_preprocessor(out_dir: str | Path) -> ColumnTransformer:
+    return joblib.load(Path(out_dir) / PREPROCESSOR_FILENAME)
