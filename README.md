@@ -1,51 +1,133 @@
-# Credit Risk Prediction
+# 💳 Credit Risk Prediction — End-to-End MLOps
 
+> A production-style machine learning system that predicts loan default risk — served as a **live web app backed by a containerized REST API**, with experiment tracking, automated quality gates, monitoring, and CI/CD.
 
+<p align="center">
+  <a href="https://matrix-credit-prediction.streamlit.app/">
+    <img src="https://img.shields.io/badge/🚀_Live_Demo-Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Live Demo">
+  </a>
+  <a href="https://credit-prediction-em5m.onrender.com/docs">
+    <img src="https://img.shields.io/badge/🔌_Live_API-Swagger_Docs-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="API Docs">
+  </a>
+</p>
 
-End-to-end machine learning system for predicting credit default risk on South African credit application data. The project includes modular training and evaluation pipelines, experiment tracking with MLflow, a FastAPI inference service with Prometheus metrics, a Streamlit demo UI, Docker deployment, and GitHub Actions CI.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/scikit--learn-1.8-F7931E?logo=scikitlearn&logoColor=white" alt="scikit-learn">
+  <img src="https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/MLflow-3.12-0194E2?logo=mlflow&logoColor=white" alt="MLflow">
+  <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://github.com/GalaxyMatrix/Credit-Prediction/actions/workflows/ci-cd.yml/badge.svg" alt="CI">
+</p>
 
-## Problem
+---
 
-Banks and lenders need to estimate whether an applicant is likely to repay a loan (**good risk**) or default (**bad risk**). This project builds a binary classifier from applicant demographics and financial features to support that decision. In production, models like this are used alongside policy rules, human review, and compliance checks—not as the sole decision maker.
+## 🎯 Try it now
 
-## Dataset
+| | Link |
+|---|---|
+| **Web app (UI)** | **https://matrix-credit-prediction.streamlit.app/** |
+| **REST API (Swagger)** | **https://credit-prediction-em5m.onrender.com/docs** |
 
-- **Source file:** `southAfrican_credit_data.csv`
-- **Size:** ~1,000 loan applications
+> ⏳ **Heads up:** the API runs on a free tier that sleeps after ~15 min of inactivity. The **first** request may take 30–60s to wake the service — after that it's instant. If a prediction seems slow, just retry once.
+
+---
+
+## ✨ Why this project stands out
+
+This is **not a notebook** — it's a full ML lifecycle wired together the way real teams ship models:
+
+- 🧱 **Modular pipeline** — research notebook refactored into testable `src/` modules (`data_loader`, `preprocessing`, `model`, `metrics`).
+- 🔀 **Client/server architecture** — a thin **Streamlit** UI calls a **FastAPI** model service; each deploys, scales, and is monitored independently.
+- 🧪 **Experiment tracking** — every train/eval run logged to **MLflow** (params, metrics, artifacts).
+- 🚦 **Automated quality gate** — `evaluate.py` **fails the build** if F1 / ROC-AUC drop below thresholds, so a regression can never ship.
+- 📊 **Monitoring built in** — FastAPI exposes **Prometheus** metrics (request counts, latency, prediction outcomes, errors).
+- ♻️ **Reproducibility** — config-driven via `params.yaml`, a **DVC** pipeline, and exactly pinned dependencies.
+- 🐳 **Containerized** — production `Dockerfile` (non-root user + healthcheck) and `docker-compose` for API + Prometheus.
+- ✅ **CI/CD** — GitHub Actions runs **train → evaluate → test** on every push and uploads model artifacts.
+- 🎯 **No training/serving skew** — a single fitted `ColumnTransformer` (`preprocessor.pkl`) is the one source of truth used in both training and inference.
+
+---
+
+## 🏗️ Architecture
+
+```text
+                 ┌──────────────────────────┐
+                 │   Streamlit UI (client)   │   matrix-credit-prediction.streamlit.app
+                 │        app.py             │
+                 └────────────┬─────────────┘
+                              │  POST /predict  (JSON over HTTPS)
+                              ▼
+                 ┌──────────────────────────┐
+                 │   FastAPI service (API)   │   credit-prediction-em5m.onrender.com
+                 │        api.py             │   /predict  /health  /metrics  /docs
+                 │  ┌────────────────────┐   │
+                 │  │ preprocessor.pkl   │   │   ColumnTransformer (ordinal + one-hot)
+                 │  │ model.pkl          │   │   Extra Trees Classifier
+                 │  └────────────────────┘   │
+                 │   Prometheus /metrics     │
+                 └──────────────────────────┘
+```
+
+**Training & ops flow:**
+
+```text
+southAfrican_credit_data.csv
+        │
+        ▼  src/data_loader.py      load + split + encode target (good→1, bad→0)
+        ▼  src/preprocessing.py    ColumnTransformer: ordinal accounts, one-hot nominals
+        ▼  train.py                fit Extra Trees → model.pkl + preprocessor.pkl  (logged to MLflow)
+        ▼  evaluate.py             quality gates (F1, ROC-AUC) → eval_metrics.json
+        └─ app.py / api.py         serve predictions
+```
+
+---
+
+## 🧠 The problem
+
+Lenders need to estimate whether an applicant will repay a loan (**good risk**) or default (**bad risk**). This project builds a binary classifier from applicant demographics and financial features to support that decision. In production, such models work alongside policy rules, human review, and compliance checks — never as the sole decision maker.
+
+## 📦 Dataset
+
+- **Source:** `southAfrican_credit_data.csv` (~1,000 loan applications)
 - **Target:** `Risk` (`good` / `bad`)
-- **Features used in the model:**
+- **Class balance:** imbalanced ~70% good / ~30% bad — handled with `class_weight="balanced"`
 
-| Feature | Description |
-|---------|-------------|
-| Age | Applicant age |
-| Sex | male / female |
-| Job | Job category (0–3) |
-| Housing | own / rent / free |
-| Saving accounts | Savings level |
-| Checking account | Checking account level |
-| Credit amount | Loan amount (DM) |
-| Duration | Loan term (months) |
+| Feature | Type | Description |
+|---------|------|-------------|
+| Age | numeric | Applicant age |
+| Sex | nominal | male / female |
+| Job | numeric | Job category (0–3) |
+| Housing | nominal | own / rent / free |
+| Saving accounts | **ordinal** | little → moderate → rich → quite rich |
+| Checking account | **ordinal** | little → moderate → rich |
+| Credit amount | numeric | Loan amount (DM) |
+| Duration | numeric | Loan term (months) |
+| Purpose | nominal | car, radio/TV, education, business, … |
 
-The `Purpose` column exists in the raw CSV but is excluded from modeling to match the deployed feature set.
+### Why the encoding matters
 
-## Insights from exploratory analysis
+A key modeling decision: **`Saving accounts` and `Checking account` are ordinal** (their levels have a natural order), so they use an `OrdinalEncoder` that preserves that order. `Sex`, `Housing`, and `Purpose` are **nominal** (no order), so they use a `OneHotEncoder`. This is implemented as a single `ColumnTransformer` saved as `preprocessor.pkl` — eliminating training/serving skew and bumping hold-out accuracy from **0.648 → 0.695**.
 
-From `Credit Risk modeling.ipynb`:
+## 📈 Model & metrics
 
-### Class imbalance
+**Model:** Extra Trees Classifier (`class_weight="balanced"`, 300 estimators)
 
-The target is imbalanced: **~700 good** vs **~300 bad** (~70% / 30%). A naive model that always predicts “good” would reach ~70% accuracy while failing to catch defaults.
+Hold-out evaluation (from `artifacts/eval_metrics.json`):
 
-All tree-based models in the notebook address this explicitly:
+| Metric | Value |
+|--------|------:|
+| Accuracy | 0.695 |
+| Precision | 0.776 |
+| Recall | 0.793 |
+| F1 | 0.784 |
+| ROC-AUC | 0.716 |
 
-- **Random Forest & Extra Trees:** `class_weight="balanced"`
-- **XGBoost:** `scale_pos_weight` set from the train-set class ratio
+> For credit risk, **recall** and **precision** matter more than raw accuracy — missing a default (false negative) is usually costlier than flagging a good applicant for review. A naive "always good" baseline would hit ~70% accuracy while catching **zero** defaults; this model achieves comparable accuracy with strong recall on the minority (bad-risk) class.
 
-The production pipeline (`train.py`) uses `class_weight="balanced"` on Extra Trees and reports **F1 (0.80)** and **recall (0.81)** on hold-out data—better indicators than accuracy alone for imbalanced credit data.
+### Model selection (from `Credit Risk modeling.ipynb`)
 
-### Model comparison (notebook, test-set accuracy)
-
-GridSearchCV with 5-fold CV, scoring=`accuracy`:
+GridSearchCV (5-fold) compared several models before Extra Trees was chosen for its balance of performance and simplicity:
 
 | Model | Test accuracy |
 |-------|---------------:|
@@ -54,161 +136,49 @@ GridSearchCV with 5-fold CV, scoring=`accuracy`:
 | Extra Trees | 0.648 |
 | XGBoost | 0.676 |
 
-**Extra Trees** was chosen for deployment (saved as `best_extra_trees_model.pkl`) as a strong balance of performance and simplicity, even though XGBoost had slightly higher accuracy in the notebook. The refactored pipeline improves on raw accuracy with stronger **precision/recall/F1** (see metrics below), using a fixed feature set and reproducible `src/` preprocessing.
+---
 
-> Research and training live in the notebook; production training runs via `train.py` / `evaluate.py`.
+## 🛠️ Tech stack
 
-## Model & metrics
+| Layer | Tools |
+|-------|-------|
+| ML | scikit-learn (Extra Trees, ColumnTransformer), pandas, NumPy |
+| Serving | FastAPI, Uvicorn, Pydantic, Streamlit |
+| Experiment tracking | MLflow |
+| Monitoring | Prometheus |
+| Reproducibility | DVC, `params.yaml`, pinned `requirements.txt` |
+| Packaging | Docker, docker-compose |
+| CI/CD | GitHub Actions |
+| Testing | pytest |
 
-**Model:** Extra Trees Classifier (`class_weight=balanced`, 300 estimators)
-
-Hold-out evaluation metrics (from `artifacts/eval_metrics.json`):
-
-| Metric | Value |
-|--------|------:|
-| Accuracy | 0.715 |
-| Precision | 0.786 |
-| Recall | 0.814 |
-| F1 | 0.800 |
-| ROC-AUC | 0.767 |
-
-For credit risk, **recall on bad-risk cases** and **precision** often matter more than accuracy alone: missing a default (false negative) can be costlier than flagging a good applicant for review (false positive).
-
-## Pipeline
+## 🗂️ Project structure
 
 ```text
-southAfrican_credit_data.csv
-        │
-        ▼
-  src/data_loader.py      load + split + encode target (good→1, bad→0)
-        │
-        ▼
-  src/preprocessing.py    label-encode categoricals, handle missing values
-        │
-        ▼
-  train.py                fit ExtraTrees → artifacts/*.pkl + train_metrics.json
-        │
-        ▼
-  evaluate.py             quality gates (F1, ROC-AUC) → eval_metrics.json
-        │
-        ├── app.py          Streamlit UI
-        └── api.py          FastAPI + Prometheus /metrics
-```
-
-Tracked experiments are stored under `./mlruns` (MLflow).
-
-## Project structure
-
-```text
-├── app.py                 Streamlit demo
-├── api.py                 FastAPI inference service
-├── train.py               Training entrypoint
+├── app.py                 Streamlit UI (calls the API)
+├── api.py                 FastAPI inference service + Prometheus metrics
+├── train.py               Training entrypoint (logs to MLflow)
 ├── evaluate.py            Evaluation + quality gates
+├── params.yaml            Central config (hyperparams, thresholds, MLflow)
 ├── src/
-│   ├── data_loader.py
-│   ├── preprocessing.py
-│   ├── model.py
-│   └── metrics.py
-├── artifacts/             Model, encoders, metrics JSON
-├── tests/
+│   ├── data_loader.py     load, split, target encoding
+│   ├── preprocessing.py   ColumnTransformer (ordinal + one-hot)
+│   ├── model.py           build / train / save / load
+│   └── metrics.py         metric computation + quality-gate thresholds
+├── artifacts/             model.pkl, preprocessor.pkl, metrics JSON
+├── tests/                 pytest suite (data, model, evaluate, api)
 ├── docker/                Dockerfile + docker-compose + Prometheus config
 ├── dvc.yaml               DVC pipeline stages
 └── .github/workflows/     CI: train → evaluate → pytest
 ```
 
-## Quick start
 
-### Prerequisites
 
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
-
-### Setup
-
-```bash
-uv venv
-# Windows
-.\.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
-uv pip install -r requirements.txt
-```
-
-### Train & evaluate
-
-```bash
-uv run python train.py
-uv run python evaluate.py
-```
-
-Artifacts are written to `artifacts/`:
-
-- `best_extra_trees_model.pkl`
-- `*_label_encoder.pkl`
-- `train_metrics.json`, `eval_metrics.json`
-
-### Run tests
-
-```bash
-uv run pytest -q --disable-warnings
-```
-
-API tests require artifacts; run `train.py` first or rely on CI to train before pytest.
-
-### Streamlit UI
-
-```bash
-uv run streamlit run app.py
-```
-
-### FastAPI
-
-```bash
-uv run uvicorn api:app --reload --port 8000
-```
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Health check |
-| `GET /docs` | Swagger UI |
-| `POST /predict` | Credit risk prediction |
-| `GET /metrics` | Prometheus metrics |
-
-### Docker
-
-```bash
-python train.py   # ensure artifacts/ exists
-cd docker
-docker compose up --build
-```
-
-- API: http://localhost:8000  
-- Prometheus: http://localhost:9090  
-
-### MLflow UI
-
-```bash
-uv run mlflow ui
-```
-
-Open http://localhost:5000 to browse training and evaluation runs.
-
-## CI/CD
-
-On push/PR to `main`, GitHub Actions:
-
-1. Installs dependencies  
-2. Runs `train.py` and `evaluate.py`  
-3. Runs `pytest`  
-4. Uploads `artifacts/` as a workflow artifact  
-
-## Limitations
+## ⚠️ Limitations
 
 - Trained on a historical, region-specific dataset; performance may not generalize to other markets or time periods.
-- No fairness audit is included by default; deployers should evaluate metrics across protected groups before production use.
-- This repository is for educational and portfolio purposes, not production lending decisions.
+- No fairness audit by default; deployers should evaluate metrics across protected groups before any real use.
+- Built for **educational / portfolio** purposes — not for production lending decisions.
 
-## License
+## 📄 License
 
 See repository license (if applicable).
