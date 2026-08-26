@@ -91,8 +91,8 @@ with st.container():
     with col2:
         st.markdown("**💰 Financial Information**")
 
-        st.markdown("**Credit Amount (DM)**")
-        credit_amount = st.number_input("Credit Amount (DM)", min_value=0, value=1000, step=100, label_visibility="collapsed")
+        st.markdown("**Credit Amount (R)**")
+        credit_amount = st.number_input("Credit Amount (R)", min_value=0, value=1000, step=100, label_visibility="collapsed")
 
         st.markdown("**Duration (months)**")
         duration = st.number_input("Duration (months)", min_value=1, value=12, label_visibility="collapsed")
